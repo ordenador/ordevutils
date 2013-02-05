@@ -1,4 +1,4 @@
-## Beta
+## Para AIX, probado en 5300-12-02-1036
 ## EXEC: monisocket.sh > /dev/null 2>&1 &
 while true; do
         fecha=`date '+%F'`
