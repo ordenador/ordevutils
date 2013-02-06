@@ -15,6 +15,7 @@
 #
 ########################################################
 lsof -nl | grep -E "TCP|UDP" | grep $1| awk '{print $1 "; " $2}'> socket_all.txt
+touch socket_count.txt
 cat socket_all.txt | while read line; do
         echo "$line; `grep "$line" socket_all.txt | wc -l | sed 's/^[ v]*//'`" >> socket_count.txt
 done
