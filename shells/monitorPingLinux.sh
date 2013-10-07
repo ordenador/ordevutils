@@ -1,6 +1,6 @@
 #!/bin/ksh
 #
-# Monitoreo de PING
+# Monitoreo de PING LINUX
 #
 # EXEC: nohup /bin/ksh /root/monitoreo/moniphear.sh &
 #
