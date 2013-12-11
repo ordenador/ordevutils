@@ -63,7 +63,7 @@ fi
 
 ### Validacion de DNS respecto a las IP(s) locales
 if ( contains "$IP_ETH_LOCAL" "$NSLOOKUP_NOMBRE_PROD" ); then
-                echo -e "Validacion OK: Existe conincidencia de IP local relacionado con nombre DNS '$HOSTNAME_PROD'.\n"
+        echo -e "Validacion OK: Existe conincidencia de IP local relacionado con nombre DNS '$HOSTNAME_PROD'.\n"
         echo -e "${GREEN}Inicio copia de arhivos. Desde: '$HOSTNAME_PROD-$SITE', Hacia: '$NOMBRE_REPLICA'\n${YELLOW}###############################################################################${COLOR_OFF}"
         ### Copia de archivos:
         /bin/sh -xc "rsync -va /home/ordenador/test/rsync_origen $NSLOOKUP_NOMPRE_REPLICA:/home/ordenador/test/rsync_destino/"
