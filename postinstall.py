@@ -2,16 +2,20 @@
 # -*- coding: utf-8 -*-
 
 import os
+import stat
 import subprocess
 import sys, getopt
 import urllib
 import errno
 import socket
-import md5
 import datetime
 import crypt
 import socket
 import pwd
+try:
+    from hashlib import md5
+except ImportError:
+    from md5 import md5
 
 from sys import argv
 from sys import stdout, stdin
@@ -22,9 +26,11 @@ from signal import SIGINT, SIGTERM
 # LIST RPMS        #
 ####################
 RPMS_DB = ['oracleasmlib', 'oracle-validated', 'oracleasm-support', 'oracleasm', 'kernel-uek-debug']
+## Paquetes HDLM
+RPMS_HDLM = ['libstdc++.i686']
+
 RPMS = ['rpm-yum-repo', 'lshw', 'apr-devel', 'apr-devel', 'apr-util-devel', 'keyutils', 'lsscsi', 'subversion-devel']
 RPMS += ['openmotif', 'sysstat']
-
 ## Paquetes Common
 RPMS += ['sistbin', 'nagios-scripts', 'osutils']
 ## Paquetes Post Discos Storage
@@ -49,12 +55,25 @@ MOUNT_APP = ['/u01']
 FILE_DB = ['/usr/local/bin/asmcheck.pl']
 FILE_APP = []
 
+###########################
+# PERL MODULES            #
+###########################
+
+PERL_MODULES = ['DBI']
+
+##############################
+# PATHS WITH PERMISSIONS 755 #
+##############################
+
+USERDB_PATHS = ['/u01/home/dba/admbd', '/u01/home/app/oracle']
+
 ####################
 # LIST NO SERVICES #
 ####################
 
 NOSERVICES = ['acpid','avahi-daemon','apmd','autofs','bluetooth','cups','gpm','identd','lpd','netfs','nfs','nfslock','portmap','radvd','rawdevices']
 NOSERVICES += ['rhnsd','sendmail','snmpd','snmptrapd','smartd','xfs','xinetd','yppasswdd','ypserv','ypxfrd','httpd','smartd','yum-updatesd']
+NOSERVICES += ['NetworkManager']
 
 ####################
 # GLOBAL VARIABLES #
@@ -92,9 +111,11 @@ if not temp.endswith(os.sep):
 # /dev/null, send output from programs so they don't print to screen.
 DN = open(os.devnull, 'w')
 
-REMOTE_SERVER 	= "10.1.1.249"
-REMOTE_PATCH	= ""
+REMOTE_SERVER   = "10.1.1.249"
+REMOTE_PATCH    = ""
 
+OS_NAME = ""
+OS_VERSION = ""
 IP = ""
 HOSTNAME = ""
 TYPE = ""
@@ -188,7 +209,7 @@ def run_noBuffer(command):
     return output, err
 
 def md5sum(file):
-    m = md5.new()
+    m = md5()
     try:
         #open and read buffer
         f = open(file, "r").read(8096)
@@ -202,12 +223,19 @@ def md5sum(file):
 ####################
 
 def inital_info():
-    command = run('cat /etc/oracle-release')
+    global OS_NAME, OS_VERSION
+    if os.path.isfile('/etc/oracle-release'):
+        OS_NAME="Oracle Linux"
+    else:
+        OS_NAME="Red Hat Linux"
+    command = run('cat /etc/redhat-release')
     output, err = command.communicate()
-    os_version = output.split()[4]
-    ## solicitar info inicial ej: DB/APP
-    if os_version != '5.8':
-        print R+" ["+O+"!"+R+"] "+O+"OS Version".ljust(14)+": "+C+os_version.ljust(20)+W
+    OS_VERSION = output.split()[6]
+    if OS_VERSION in ['5.8','6.3']:
+        log_ok("OS Version", OS_NAME + ' ' + OS_VERSION, "OK")
+    else:
+        log_error("OS Version", OS_NAME + ' ' + OS_VERSION, "postinstall funciona en RHEL 5.8 o OL 5.8")
+        sys.exit(2) 
 
 def check_network():
     """
@@ -291,7 +319,31 @@ def check_perl():
             log_error("Perl args", perl_args, "check perl args")
     else:
         log_error("Perl version", perl_version, "check perl version")
-    
+
+def check_perl_modules(perlModules):
+    myFile = open('/tmp/modules_perl.pl', 'w')
+    myFile.write('use ExtUtils::Installed;'+'\n')
+    myFile.write('my ($inst) = ExtUtils::Installed->new();'+'\n')
+    myFile.write('print $inst->modules();'+'\n')
+    myFile.close()
+    for perlModule in perlModules:
+        command = run("perl /tmp/modules_perl.pl")
+        output, err = command.communicate()
+        if perlModule in output:
+            log_ok("Perl Module", perlModule, "OK")
+        else:
+            log_error("Perl version", perlModule, "Not Installed")
+
+def check_perl_archname():
+    command = run("perl -V | grep archname")
+    output, err = command.communicate()
+    perl_archname = output.split('archname=')[1].split('\n')[0]
+    if 'x86_64-linux-thread-multi' in perl_archname:
+        log_ok("Perl Archname", perl_archname, "OK")
+    else:
+        log_error("Perl Archname", perl_archname, "Not Installed")
+
+
 def check_iptables():
     command = run("/etc/init.d/iptables status")
     output, err = command.communicate()
@@ -300,6 +352,15 @@ def check_iptables():
         log_ok("Firewall", iptables, "OK")
     else:
         log_error("Firewall", iptables, "check service iptables")
+
+def check_ip6tables():
+    command = run("/etc/init.d/ip6tables status")
+    output, err = command.communicate()
+    ip6tables = output.split()[2]
+    if 'stopped.' in ip6tables:
+        log_ok("Firewall", ip6tables, "OK")
+    else:
+        log_error("Firewall", ip6tables, "check service ip6tables")
 
 def check_selinux():
     command = run("/usr/sbin/sestatus")
@@ -497,6 +558,7 @@ def check_passwd_root():
         salt = salt_and_hash.split('$')[2]
     else:
         salt = salt_and_hash
+    ***REMOVED***
     new_salt_and_hash = crypt.crypt('password','$1$%s' % salt)
     if salt_and_hash == new_salt_and_hash:
         log_ok('Password', 'root', 'OK')
@@ -511,6 +573,41 @@ def check_sysedge_up():
     else:
         log_error('SysEdge', 'SysEdge No runing', 'check SysEdge: ps -fea | grep sysedge')
 
+def check_sysedge_location():
+    if os.path.isfile('/etc/init.d/CA-SystemEDGE'):
+        sysedgedir = ''
+        sysedgeport = ''
+        f = open('/etc/init.d/CA-SystemEDGE', 'r')
+        for line in f:
+            if not line == '\n':
+                if 'SYSEDGEDIR=' in line:
+                    sysedgedir = line.split('"')[1]
+                if 'DEFAULT_PORT=' in line:
+                    sysedgeport = line.split('"')[1]
+        f.close()
+        
+        ## check port config
+        if sysedgeport == '1691':
+            log_ok('SysEdge', 'SysEdge port 1691', 'OK')
+        else:
+            log_error('SysEdge', 'SysEdge port 1691', 'check port in /etc/init.d/CA-SystemEDGE')
+
+        ## path configs
+        path1 = sysedgedir + '/config/sysedge.cf'
+        path2 = sysedgedir + '/config/port' + sysedgeport + '/sysedge.cf'
+        if "syslocation 'DEFAULT LOCATION'" not in open(path1, 'r').read():
+            log_ok('SysEdge', 'Location Configure', 'OK')
+        else:
+            log_error('SysEdge', 'Location Configure', 'check ' + path1)
+
+        if "syslocation 'DEFAULT LOCATION'" not in open(path2, 'r').read():
+            log_ok('SysEdge', 'Location Configure', 'OK')
+        else:
+            log_error('SysEdge', 'Location Configure', 'check ' + path2)
+    else:
+        log_error('SysEdge', 'SysEdge not Installed', 'Please Install SysEdge')
+
+# socket client
 class Client( object ):
     rbufsize= -1
     wbufsize= 0
@@ -578,12 +675,47 @@ def check_users_dba():
         except:
             log_error('Users list', 'User not exist', 'create user: '+name)
 
+def check_chmod_user():
+    f = open('/etc/passwd', 'r')
+    for line in f:
+        if not line == '\n':
+            s = line.split(':')
+            if s[3] in ['1000','1500','4000','3000','14000']:
+                userShell = s[6].split('\n')[0]
+                userId = s[2]
+                userGroup = s[3]
+                pathUser = s[5]
+                if os.path.isdir(pathUser):
+                    st = os.stat(pathUser)
+                    uid = st.st_uid
+                    gid = st.st_gid
+                    if oct(stat.S_IMODE(st.st_mode)) == '0755':
+                        log_ok('Permissions 755', pathUser, 'OK')
+                    else:
+                        log_error('Permissions 755', 'Permissions 755', 'check ' + pathUser)
+                    if userId == str(uid) and userGroup == str(gid):
+                        log_ok('Permissions Home Owner', s[0],'OK')
+                    else:
+                        log_error('Permissions Home Owner', 'Owner Path', 'check '+pathUser)
+                else:
+                    log_error('User Path', 'Not exists dir', 'check '+pathUser)
+    f.close()
+
+def check_java_version():
+    command = run('java -version')
+    output, err = command.communicate()
+    if '1.6.0_43' in output:
+        log_ok('Java', 'Version 1.6.0_43', 'OK')
+    else:
+        log_error('Java', 'Version 1.6.0_43', 'check: java -version')
+
 #################
 
 def principal():
     global TYPE
     try:
         inital_info()
+        check_sysedge_location()
         check_network()
         check_ssh_root()
         check_ntp()
@@ -591,7 +723,10 @@ def principal():
         check_ntp_cron()
         check_zdump()
         check_perl()
+        check_perl_modules(PERL_MODULES)
+        check_perl_archname()
         check_iptables()
+        check_ip6tables()
         check_selinux()
         check_kdump()
         check_ksh()
@@ -607,6 +742,7 @@ def principal():
             check_ssh_dba()
             check_file(FILE_DB)
             check_users_dba()
+            check_chmod_user(USERDB_PATHS,'0755')
         elif TYPE in ['TDB'] :
             check_rpm(RPMS_DB)
             check_mount(MOUNT_TDB)
@@ -623,7 +759,9 @@ def principal():
         check_noservices(NOSERVICES)
         check_passwd_root()
         check_sysedge_up()
+        check_chmod_user()
         check_users_update()
+        check_java_version()
     except KeyboardInterrupt:
         print R+'\n (^C)'+O+' interrupted\n'+W
     except EOFError:
@@ -664,7 +802,10 @@ def main(argv):
 if __name__ == "__main__":
    main(sys.argv[1:])
 
+
+
 """
+Agregar búsqueda en camry del listado, pal actualizar password
 Valiar sysedge (armar rpm)
 Usuarios y grupos.
 Revisar grupo sweb, bavim
