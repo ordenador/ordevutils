@@ -742,7 +742,6 @@ def principal():
             check_ssh_dba()
             check_file(FILE_DB)
             check_users_dba()
-            check_chmod_user(USERDB_PATHS,'0755')
         elif TYPE in ['TDB'] :
             check_rpm(RPMS_DB)
             check_mount(MOUNT_TDB)
