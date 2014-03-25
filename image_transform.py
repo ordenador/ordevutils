@@ -25,13 +25,13 @@ ratio_im = float(height)/float(width)
 ratio_rectangle = float(720)/float(512)
 ratio_square = 1
 
-## ratio caratula normal
+## ratio cover ratio_rectangle
 if ratio_im*0.9 < ratio_rectangle < ratio_im*1.1:
 	if width > 512:
 		im = im.resize((512, 720), Image.ANTIALIAS)
 		im.save(INAME+'_resize.'+IEXT)
 
-## ratio caratula normal
+## ratio cover ratio_square
 if ratio_im*0.9 < ratio_square < ratio_im*1.1:
 	if width > 512:
 		im = im.resize((512, 512), Image.ANTIALIAS)
