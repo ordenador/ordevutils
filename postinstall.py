@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/local/bin/python
 # -*- coding: utf-8 -*-
 
 import os
@@ -12,6 +12,7 @@ import datetime
 import crypt
 import socket
 import pwd
+import time
 try:
     from hashlib import md5
 except ImportError:
@@ -21,11 +22,16 @@ from sys import argv
 from sys import stdout, stdin
 from subprocess import Popen, call, PIPE
 from signal import SIGINT, SIGTERM
+import optparse 
+from stat import ST_MODE
 
-####################
-# LIST RPMS        #
-####################
-RPMS_DB = ['oracleasmlib', 'oracle-validated', 'oracleasm-support', 'oracleasm', 'kernel-uek-debug']
+############################
+#######   VERSION    #######
+############################
+program_version="%prog 1.0.8"
+############################
+
+
 ## Paquetes HDLM
 RPMS_HDLM = ['libstdc++.i686']
 
@@ -61,19 +67,13 @@ FILE_APP = []
 
 PERL_MODULES = ['DBI']
 
-##############################
-# PATHS WITH PERMISSIONS 755 #
-##############################
-
-USERDB_PATHS = ['/u01/home/dba/admbd', '/u01/home/app/oracle']
-
 ####################
 # LIST NO SERVICES #
 ####################
 
 NOSERVICES = ['acpid','avahi-daemon','apmd','autofs','bluetooth','cups','gpm','identd','lpd','netfs','nfs','nfslock','portmap','radvd','rawdevices']
 NOSERVICES += ['rhnsd','sendmail','snmpd','snmptrapd','smartd','xfs','xinetd','yppasswdd','ypserv','ypxfrd','httpd','smartd','yum-updatesd']
-NOSERVICES += ['NetworkManager']
+NOSERVICES += ['NetworkManager', 'iptables', 'ip6tables']
 
 ####################
 # GLOBAL VARIABLES #
@@ -234,7 +234,7 @@ def inital_info():
     if OS_VERSION in ['5.8','6.3']:
         log_ok("OS Version", OS_NAME + ' ' + OS_VERSION, "OK")
     else:
-        log_error("OS Version", OS_NAME + ' ' + OS_VERSION, "postinstall funciona en RHEL 5.8 o OL 5.8")
+        log_error("OS Version", OS_NAME + ' ' + OS_VERSION, "postinstall funciona en RHEL 5.8+ o OL 5.8+")
         sys.exit(2) 
 
 def check_network():
@@ -260,10 +260,8 @@ def check_network():
     else:
         log_ok("Hostname", HOSTNAME, "OK")
 
-    ## check namesever 108.0.1.45 or 10.108.1.1
-    if findstr_in_file("108.0.1.45", "/etc/resolv.conf"):
-        log_ok("Resolv", "108.0.1.45", "OK")
-    elif findstr_in_file("10.108.1.1", "/etc/resolv.conf"):
+    ## check namesever 10.108.1.1
+    if findstr_in_file("10.108.1.1", "/etc/resolv.conf"):
         log_ok("Resolv", "10.108.1.1", "OK")
     else:
         log_error("Resolv", "", "check /etc/resolv.conf")
@@ -279,6 +277,14 @@ def check_network():
         log_ok("IPV6", "no", "OK")
     else:
         log_error("IPV6", "?", "revisar archivo /etc/sysconfig/network")
+    ## check hostname vs dns
+    try:
+        if HOSTNAME in socket.gethostbyaddr(IP)[0]:
+            log_ok("Hostname", "vs DNS", "OK")
+        else:
+            log_error("Hostname", "Hostname vs DNS", "check hostname and name resolv in dns")
+    except:
+        log_error("Hostname", "Hostname vs DNS", "check hosts table")
 
 def check_rpm(rpms):
     """
@@ -342,25 +348,6 @@ def check_perl_archname():
         log_ok("Perl Archname", perl_archname, "OK")
     else:
         log_error("Perl Archname", perl_archname, "Not Installed")
-
-
-def check_iptables():
-    command = run("/etc/init.d/iptables status")
-    output, err = command.communicate()
-    iptables = output.split()[2]
-    if 'stopped.' in iptables:
-        log_ok("Firewall", iptables, "OK")
-    else:
-        log_error("Firewall", iptables, "check service iptables")
-
-def check_ip6tables():
-    command = run("/etc/init.d/ip6tables status")
-    output, err = command.communicate()
-    ip6tables = output.split()[2]
-    if 'stopped.' in ip6tables:
-        log_ok("Firewall", ip6tables, "OK")
-    else:
-        log_error("Firewall", ip6tables, "check service ip6tables")
 
 def check_selinux():
     command = run("/usr/sbin/sestatus")
@@ -513,7 +500,7 @@ def check_ssh_root():
     check_file_md5sum(ROOT_AUTHORIZED_FILE, ROOT_AUTHORIZED_MD5SUM, "Ssh Key root")
 
 def check_ntp_rclocal():
-    if  not findstr_in_file('/usr/sbin/ntpdate camry', '/etc/rc.local'):
+    if not findstr_in_file('/usr/sbin/ntpdate camry', '/etc/rc.local') and not findstr_in_file('ntpdate camry', '/etc/rc.local'):
         log_error('NTP rc.local', 'NTP to camry','check /etc/rc.local')
     else:
         log_ok('NTP rc.local', 'NTP to camry','OK')
@@ -521,7 +508,7 @@ def check_ntp_rclocal():
 def check_ntp_cron():
     if os.path.isfile('/var/spool/cron/root'):
         if  not findstr_in_file('/usr/sbin/ntpdate camry', '/var/spool/cron/root'):
-            log_error('NTP cron', 'asroot or asoracle','check /var/spool/cron/root')
+            log_error('NTP cron', 'no ntpdate camry in cron','check /var/spool/cron/root')
         else:
             log_ok('NTP cron', 'crontab','OK')
     else:
@@ -541,14 +528,32 @@ def check_noservices(services):
         Check service disable
     """
     for service in services:
+        ## Check chkconfig
         command = run('chkconfig --list '+service)
         output, err = command.communicate()
         if '0:off' in output and '1:off' in output and '2:off' in output and '3:off' in output and '4:off' in output and '5:off' in output and '6:off' in output:
-            log_ok('service disable?', service, "Disabled")
+            log_ok('service disable?', service, "Disabled in chkconfig")
         elif 'error reading information on service' in err and 'No such file or directory' in err:
-            log_ok('service disable?', service, "Not exists")
+            log_ok('service disable?', service, "Not exists with chkconfig")
         else:
             log_error('service disable?', service, "check service: chkconfig --list "+service)
+        ## Check /etc/init.d/servicename
+        if os.path.isfile('/etc/init.d/'+ service):
+            command = run('/etc/init.d/'+ service + " status")
+            output, err = command.communicate()
+            status = command.wait()
+            if status is not 0:
+                log_ok('/etc/init.d/' + service, service, "Service " + service + "is stoped or not running")
+            elif 'is stopped' in output or 'not running' in output:
+                log_ok('/etc/init.d/' + service, service, "Service " + service + "is stoped or not running")
+            else:
+                ## services dont know real state
+                if service in ['rawdevices', 'rhnsd']:
+                    log_ok('/etc/init.d/' + service, service, "Service " + service + ": dont know real state")
+                else:
+                    log_error('service disable?', service, "check service: /etc/init.d/" + service + " status")
+        else:
+            log_ok('/etc/init.d/' + service, service, "Not exist service: " + service)
 
 def check_passwd_root():
     command = run('grep root /etc/shadow')
@@ -558,8 +563,10 @@ def check_passwd_root():
         salt = salt_and_hash.split('$')[2]
     else:
         salt = salt_and_hash
-    ***REMOVED***
-    new_salt_and_hash = crypt.crypt('password','$1$%s' % salt)
+    if OS_VERSION.split('.')[0] == '6':
+        new_salt_and_hash = crypt.crypt('password','$6$%s' % salt)
+    else:
+    	new_salt_and_hash = crypt.crypt('password','$1$%s' % salt)
     if salt_and_hash == new_salt_and_hash:
         log_ok('Password', 'root', 'OK')
     else:
@@ -595,15 +602,21 @@ def check_sysedge_location():
         ## path configs
         path1 = sysedgedir + '/config/sysedge.cf'
         path2 = sysedgedir + '/config/port' + sysedgeport + '/sysedge.cf'
-        if "syslocation 'DEFAULT LOCATION'" not in open(path1, 'r').read():
-            log_ok('SysEdge', 'Location Configure', 'OK')
+        if os.path.isfile(path1):
+            if "syslocation 'DEFAULT LOCATION'" not in open(path1, 'r').read():
+                log_ok('SysEdge', 'Location Configure', 'OK')
+            else:
+                log_error('SysEdge', 'Location Configure', 'change ' + path1)
         else:
-            log_error('SysEdge', 'Location Configure', 'check ' + path1)
+			log_error('SysEdge', 'No Config', 'check ' + path1)
 
-        if "syslocation 'DEFAULT LOCATION'" not in open(path2, 'r').read():
-            log_ok('SysEdge', 'Location Configure', 'OK')
+        if os.path.isfile(path2):
+            if "syslocation 'DEFAULT LOCATION'" not in open(path2, 'r').read():
+                log_ok('SysEdge', 'Location Configure', 'OK')
+            else:
+                log_error('SysEdge', 'Location Configure', 'change ' + path2)
         else:
-            log_error('SysEdge', 'Location Configure', 'check ' + path2)
+			log_error('SysEdge', 'No Config', 'check ' + path2)
     else:
         log_error('SysEdge', 'SysEdge not Installed', 'Please Install SysEdge')
 
@@ -613,6 +626,7 @@ class Client( object ):
     wbufsize= 0
     def __init__( self, address=('10.1.1.249',443) ):
         self.server=socket.socket( socket.AF_INET, socket.SOCK_STREAM )
+        self.server.settimeout(10)
         self.server.connect( address )
         self.rfile = self.server.makefile('rb', self.rbufsize)
         self.wfile = self.server.makefile('wb', self.wbufsize)
@@ -704,17 +718,46 @@ def check_chmod_user():
 def check_java_version():
     command = run('java -version')
     output, err = command.communicate()
-    if '1.6.0_43' in output:
+    if '1.6.0_43' in err:
         log_ok('Java', 'Version 1.6.0_43', 'OK')
     else:
         log_error('Java', 'Version 1.6.0_43', 'check: java -version')
+
+def check_700():
+    if oct(os.stat(sys.argv[0])[ST_MODE])[-3:] != '700':
+        log_error('postinstall.py', 'Permissions not 700', 'chmod 700 postinstall.py')
+        return True
+
+def check_date_vs_hwclock():
+    command = subprocess.Popen("hwclock --debug | grep Hw",shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    output, err = command.communicate()
+    hwclock = output.split(':')[1].strip()
+    date = time.strftime("%Y/%m/%d %H")
+    if date == hwclock:
+        log_ok('Date', 'hwclock vs date', 'OK')
+    else:
+        log_error('Date', 'hwclock not equal date', 'check date and hwclock')
+
+def set_values():
+    global RPMS_DB
+    if OS_VERSION.split('.')[0] == '6':
+        #OL6.X
+        RPMS_DB = ['oracleasm-support', 'oracleasmlib', 'oracle-rdbms-server-11gR2-preinstall']
+    else:
+        #OL5.X
+        RPMS_DB = ['oracleasmlib', 'oracle-validated', 'oracleasm-support', 'oracleasm', 'kernel-uek-debug']
+
 
 #################
 
 def principal():
     global TYPE
+    if check_700():
+        exit_gracefully(0)
+
     try:
         inital_info()
+        set_values()
         check_sysedge_location()
         check_network()
         check_ssh_root()
@@ -722,11 +765,10 @@ def principal():
         check_ntp_rclocal()
         check_ntp_cron()
         check_zdump()
+        check_date_vs_hwclock()
         check_perl()
         check_perl_modules(PERL_MODULES)
         check_perl_archname()
-        check_iptables()
-        check_ip6tables()
         check_selinux()
         check_kdump()
         check_ksh()
@@ -767,49 +809,32 @@ def principal():
         print R+'\n (^D)'+O+' interrupted\n'+W
     exit_gracefully(0)
 
+
 def usage():
-   print ''
-   print '\tFavor utilizar:\t'+O+'postinstall.py ['+C+'-v'+O+'|'+C+'--verbose'+O+'] [('+C+'-t'+O+'|'+C+'--type'+O+') ('+C+'APP'+O+'|'+C+'PDB'+O+'|'+C+'TDB'+O+')]'+W
-   print C+'\tAPP'+W+' = '+O+'Aplication'+W
-   print C+'\tPDB'+W+' = '+O+'Productive Data Base'+W
-   print C+'\tTDB'+W+' = '+O+'Test Data Base'+W
-   print '\tPor defecto el '+C+'--type'+W+' es '+C+'APP'+W
-   print ''
+    print ''
+    print '  '+C+'APP'+W+' = '+O+'Aplication'+W
+    print '  '+C+'PDB'+W+' = '+O+'Productive Data Base'+W
+    print '  '+C+'TDB'+W+' = '+O+'Test Data Base'+W
+    print ''
 
 def main(argv):
     global TYPE, VERBOSE
-    systemType = 'APP'
-    try:
-      opts, args = getopt.getopt(argv,"hvt:",["type","verbose"])
-    except getopt.GetoptError:
-      usage()
-      sys.exit(2)
-    for opt, arg in opts:
-        if opt == '-h':
-            usage()
-            sys.exit()
-        elif opt in ("-t", "-type"):
-            systemType = arg.upper()
-            if not systemType in ['APP', 'TDB', 'PDB']:
-                usage()
-                sys.exit(2)
-        elif opt in ("-v", "-verbose"):
-            VERBOSE = True
-    TYPE = systemType
-    principal()
+    parser = optparse.OptionParser(usage="Usage: %prog -t (APP|TDB|PDB) [options]", version=program_version)
+    parser.add_option('-t', '--type', help='select type (APP|TDB|PDB)', dest='type', type='choice', choices=['APP', 'TDB', 'PDB'])
+    parser.add_option('-v', '--verbose', default=False, dest='verbose', action='store_true')
+
+    (opts, args) = parser.parse_args()
+
+    if opts.verbose:
+        VERBOSE = True 
+
+    if opts.type:
+        TYPE = opts.type
+        principal()
+    else:
+        parser.print_help()
+        usage()
+        sys.exit(-1)
 
 if __name__ == "__main__":
    main(sys.argv[1:])
-
-
-
-"""
-Agregar búsqueda en camry del listado, pal actualizar password
-Valiar sysedge (armar rpm)
-Usuarios y grupos.
-Revisar grupo sweb, bavim
-RPM post DISCOS: ctm64-cl, lgtoclnt, lgtoconf, nmon
-link sinbolico dentro del rpm Perl
-
-STORAGE v2
-"""
