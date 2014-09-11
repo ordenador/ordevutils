@@ -1,38 +1,53 @@
 from PIL import Image, ImageChops
 
 def trim(im):
-    bg = Image.new(im.mode, im.size, im.getpixel((0,0)))
+    bg = Image.new(im.mode, im.size, "white")
     diff = ImageChops.difference(im, bg)
     diff = ImageChops.add(diff, diff, 2.0, -100)
     bbox = diff.getbbox()
     if bbox:
         return im.crop(bbox)
 
+def crop_image(input_img, start_x, start_y, width, height):
+    """Pass input name image, output name image, x coordinate to start croping, y coordinate to start croping, width to crop, height to crop """
+    box = (start_x, start_y, start_x + width, start_y + height)
+    return input_img.crop(box)
+    
+
+IMAGE = 'destiny.jpg'
+IMAGE = '4_xbox-360_tomb-raider.jpg'
 IMAGE = 'mario.jpg'
-# IMAGE = '4_xbox-360_tomb-raider.jpg'
-# IMAGE = '0_3ds_super-mario-3d-land.jpg'
-# IMAGE = '4_3ds_super-paper-mario-strikers.jpg'
+IMAGE = '0_3ds_super-mario-3d-land.jpg'
+IMAGE = '4_3ds_super-paper-mario-strikers.jpg'
 INAME = IMAGE.split('.')[0]
 IEXT = IMAGE.split('.')[1]
 
+## load image
 im = Image.open(IMAGE)
-im = trim(im)
 
-im.save(INAME+'_noborder.'+IEXT)
+## size, what i whant
+width_size=392
+height_size=220
+ratio = float(height_size)/float(width_size)
+
+## white border delete
 width, height = im.size
-ratio_im = float(height)/float(width)
+im = trim(im)
+im.save(INAME+'_noborder.'+IEXT)
 
-ratio_rectangle = float(720)/float(512)
-ratio_square = 1
+### box cut
+width, height = im.size
+diff_width=int(width*.08)
+cut_width=width-diff_width
+cut_height=int(ratio*cut_width)
+diff_height=height-cut_height
 
-## ratio cover ratio_rectangle
-if ratio_im*0.9 < ratio_rectangle < ratio_im*1.1:
-	if width > 512:
-		im = im.resize((512, 720), Image.ANTIALIAS)
-		im.save(INAME+'_resize.'+IEXT)
+im = crop_image(im, diff_width/2, diff_height/2, cut_width, cut_height)
+im.save(INAME+'_Cropped.'+IEXT)
 
-## ratio cover ratio_square
-if ratio_im*0.9 < ratio_square < ratio_im*1.1:
-	if width > 512:
-		im = im.resize((512, 512), Image.ANTIALIAS)
-		im.save(INAME+'_resize.'+IEXT)
+## resize
+width, height = im.size
+if width > width_size or height > height_size:
+	im = im.resize((width_size, height_size), Image.ANTIALIAS)
+	im.save(INAME+'_resize.'+IEXT)
+print "done"
