@@ -1,6 +1,5 @@
 #!/usr/local/bin/python
 # -*- coding: utf-8 -*-
-
 import os
 import stat
 import subprocess
@@ -10,14 +9,12 @@ import errno
 import socket
 import datetime
 import crypt
-import socket
 import pwd
 import time
 try:
     from hashlib import md5
 except ImportError:
     from md5 import md5
-
 from sys import argv
 from sys import stdout, stdin
 from subprocess import Popen, call, PIPE
@@ -25,12 +22,11 @@ from signal import SIGINT, SIGTERM
 import optparse 
 from stat import ST_MODE
 
-############################
-#######   VERSION    #######
-############################
-program_version="%prog 1.0.8"
-############################
-
+##############################
+########   VERSION    ########
+##############################
+program_version="%prog 1.0.17"
+##############################
 
 ## Paquetes HDLM
 RPMS_HDLM = ['libstdc++.i686']
@@ -40,7 +36,7 @@ RPMS += ['openmotif', 'sysstat']
 ## Paquetes Common
 RPMS += ['sistbin', 'nagios-scripts', 'osutils']
 ## Paquetes Post Discos Storage
-RPMS += ['ctm64-cl', 'lgtoclnt', 'lgtoconf', 'nmon']
+RPMS += ['ctm64-cl', 'nmon']
 
 RPMS_NOT = ['bluez-utils', 'bluez-gnome', 'bluez-hcldump ']
 ##RPM Dudosos si agregarlos a la lista o no: 'wireless-tools'
@@ -277,12 +273,13 @@ def check_network():
         log_ok("IPV6", "no", "OK")
     else:
         log_error("IPV6", "?", "revisar archivo /etc/sysconfig/network")
+
     ## check hostname vs dns
     try:
-        if HOSTNAME in socket.gethostbyaddr(IP)[0]:
+        if HOSTNAME == socket.gethostbyaddr(IP)[0]:
             log_ok("Hostname", "vs DNS", "OK")
         else:
-            log_error("Hostname", "Hostname vs DNS", "check hostname and name resolv in dns")
+            log_error("Hostname", "Hostname vs DNS", "check hostname and name resolv, in hosts table: first name is without domain")
     except:
         log_error("Hostname", "Hostname vs DNS", "check hosts table")
 
@@ -470,7 +467,6 @@ def check_profile():
                         log_error('User profile', 'Owner file', 'check '+pathProfile)
                 else:
                     log_error('User profile', 'Not exists profile', 'check '+pathProfile)
-
     f.close()
 
 def check_execas_db():
@@ -573,9 +569,9 @@ def check_passwd_root():
         log_error('Password', 'root', 'check password root')
 
 def check_sysedge_up():
-    command = run('ps -fea')
+    command = run('ps -C sysedge')
     output, err = command.communicate()
-    if '/bin/sysedge -b' in output:
+    if 'sysedge' in output:
         log_ok('SysEdge', 'SysEdge runing', 'OK')
     else:
         log_error('SysEdge', 'SysEdge No runing', 'check SysEdge: ps -fea | grep sysedge')
@@ -745,8 +741,52 @@ def set_values():
         RPMS_DB = ['oracleasm-support', 'oracleasmlib', 'oracle-rdbms-server-11gR2-preinstall']
     else:
         #OL5.X
-        RPMS_DB = ['oracleasmlib', 'oracle-validated', 'oracleasm-support', 'oracleasm', 'kernel-uek-debug']
+        RPMS_DB = ['oracleasmlib', 'oracle-validated', 'oracleasm-support', 'oracleasm-2.6.18-308.el5', 'kernel-uek-debug']
 
+def check_postinstall_version():
+    global program_version
+    try:
+        c = Client()
+        response = c.makeRequest('version')
+        version = repr(response).split('\'')[1]
+        if version != program_version.split()[1]:
+            log_error('postinstall.py', 'New Version '+version, 'Check last version of postinstall.py')
+            return True
+        else:
+            log_ok('postinstall.py', 'Version '+program_version, 'OK')
+    except:
+        log_error('postinstall.py', 'Cannot check last version postinstall.py', 'check conection with server repolinux:443')
+
+
+def check_network_usb0():
+    command = subprocess.Popen("ifconfig | grep usb0",shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    output, err = command.communicate()
+    if 'usb0' in output:
+        log_error('Net usb0', 'Check device usb0', 'ifdown usb0')
+    else:
+        log_ok('Net usb0', 'Check device usb0', 'OK')
+    if os.path.isfile('/etc/sysconfig/network-scripts/ifcfg-usb0'):
+        f = open('/etc/sysconfig/network-scripts/ifcfg-usb0', 'r')
+        for line in f:
+            if not line == '\n':
+                if 'ONBOOT' in line and 'yes' in line:
+                    log_error('Net usb0', 'Check ONBOOT usb0', 'Configure ONBOOT=no')
+                else:
+                    log_ok('Net usb0', 'Check ONBOOT usb0', 'OK')
+        f.close()
+
+def check_password_sync():
+    try:
+        c = Client()
+        HOSTNAME=socket.gethostname()
+        response = c.makeRequest('password '+HOSTNAME)
+        password_sync = repr(response).split('\'')[1]
+        if HOSTNAME == password_sync:
+            log_ok('Update password', 'chek list camry', 'OK')
+        else:
+            log_error('Update password', 'chek list camry', 'configure password in camry')
+    except:
+        log_error('postinstall.py', 'Cannot check last version postinstall.py', 'check conection with server repolinux:443')
 
 #################
 
@@ -754,11 +794,11 @@ def principal():
     global TYPE
     if check_700():
         exit_gracefully(0)
-
+    if check_postinstall_version():
+        exit_gracefully(0)
     try:
         inital_info()
         set_values()
-        check_sysedge_location()
         check_network()
         check_ssh_root()
         check_ntp()
@@ -803,6 +843,8 @@ def principal():
         check_chmod_user()
         check_users_update()
         check_java_version()
+        check_network_usb0()
+        check_password_sync()
     except KeyboardInterrupt:
         print R+'\n (^C)'+O+' interrupted\n'+W
     except EOFError:
