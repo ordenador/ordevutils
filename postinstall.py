@@ -251,7 +251,7 @@ def check_network():
 
     HOSTNAME = socket.gethostname()
     ## Check hostname in /etc/hosts
-    if HOSTNAME == "localhost" or "." in HOSTNAME or findstr_in_file("***REMOVED***", "/etc/sysconfig/network"):
+    if HOSTNAME == "localhost" or "." in HOSTNAME or findstr_in_file("DNS", "/etc/sysconfig/network"):
         log_error("Hostname", HOSTNAME, "check hostname")
     else:
         log_ok("Hostname", HOSTNAME, "OK")
@@ -262,9 +262,9 @@ def check_network():
     else:
         log_error("Resolv", "", "check /etc/resolv.conf")
 
-    ## check namesever ***REMOVED***.cl
-    if findstr_in_file("***REMOVED***.cl", "/etc/resolv.conf"):
-        log_ok("Resolv", "***REMOVED***.cl", "OK")
+    ## check namesever DNS.com
+    if findstr_in_file("DNS.com", "/etc/resolv.conf"):
+        log_ok("Resolv", "DNS.com", "OK")
     else:
         log_error("Resolv", "", "check /etc/resolv.conf")
 
