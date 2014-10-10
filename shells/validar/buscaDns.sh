@@ -9,7 +9,7 @@ prefix="r"
 set -A suffix _cdlv _rosas _le _gtd -cdlv -rosas -le -gtd
 
 llamaDns(){
-	NSLOOKUP_VALIDA=`nslookup $nodoaux | grep -v ***REMOVED***.cl | grep -v 108.0.1.45 | grep Address | awk '{print $2}' | sed '/^$/d' | wc -l | sed 's/^[ v]*//'`
+	NSLOOKUP_VALIDA=`nslookup $nodoaux | grep -v DNS.com | grep -v 108.0.1.45 | grep Address | awk '{print $2}' | sed '/^$/d' | wc -l | sed 's/^[ v]*//'`
 	if [ "$NSLOOKUP_VALIDA" != "0" ]; then
 		NSLOOKUP=`print $nodoaux"\t";nslookup $nodoaux | grep -v ***REMOVED***.cl | grep -v 108.0.1.45 | grep Address | awk '{print $2}' | sed 's/^[ v]*//' |  tr -d '\n'`
 		echo $NSLOOKUP >> $salida
