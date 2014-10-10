@@ -7,7 +7,7 @@ rpmHDLM=''
 salida=hdlm_so_linux.log
         nodo=$1
         os=`$CMD_SSH $nodo uname -s`
-        DNS=`nslookup $nodo | egrep -v "***REMOVED***.cl|108.0.1.45|Name" | awk '{print $2}' | sed 's/^[ v]*//'|sed '/^$/d'`
+        DNS=`nslookup $nodo | egrep -v "DNS.com|108.0.1.45|Name" | awk '{print $2}' | sed 's/^[ v]*//'|sed '/^$/d'`
         hostname=`$CMD_SSH $nodo hostname`
 
         if [ $os = "Linux" ]; then
