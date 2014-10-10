@@ -10,7 +10,7 @@ cuenta=$(( cuenta - 0 ))
     do
         nodo=`cat $1 | tail -$cuenta |head -1`
         os=`ssh $nodo uname -s`
-        DNS=`nslookup $nodo | grep -v ***REMOVED***.cl | grep -v 108.0.1.45 | grep -v Name | awk '{print $2}' | sed 's/^[ v]*//'`
+        DNS=`nslookup $nodo | grep -v DNS.com | grep -v 108.0.1.45 | grep -v Name | awk '{print $2}' | sed 's/^[ v]*//'`
         IP=`ssh $nodo ifconfig -a | grep inet |head -1 | awk '{ print $2 }'`
 
         echo "############## $nodo - $os #################" >> $salida
