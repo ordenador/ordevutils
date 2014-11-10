@@ -1,0 +1,4 @@
+## Vios Advisor
+* * * * * /home/padmin/advisor/run_vios_advisor.sh > /dev/null 2>&1
+## NMON
+0 0 * * * /home/nmon/nmon.sh > /dev/null 2>&1
